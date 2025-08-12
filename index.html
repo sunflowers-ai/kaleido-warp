@@ -3,14 +3,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Kaleido Warp — Reels (Auto Record • Ask to Save)</title>
+<title>Kaleido Warp — Reels (Save Bar)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root { --bg:#0b0c10; --panel:#111318; --text:#e5e7eb; --muted:#9aa0a6; --border:#232833; }
   *{ box-sizing:border-box }
   html,body{ height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial }
-  header{ background:#111318; border-bottom:1px solid var(--border); padding:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center }
-  main{ display:grid; grid-template-columns:1fr 380px; gap:10px; height:calc(100vh - 70px); padding:10px }
+  header{ background:#111318; border-bottom:1px solid var(--border); padding:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; position:sticky; top:0; z-index:5 }
+  main{ display:grid; grid-template-columns:1fr 380px; gap:10px; height:calc(100vh - 60px); padding:10px }
   body.collapse main{ grid-template-columns:1fr; }
   @media (max-width: 1024px){ main{ grid-template-columns:1fr } }
   .panel{ background:#111318; border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; min-height:280px }
@@ -29,9 +29,11 @@
   .val{ color:#9aa0a6; font-variant-numeric: tabular-nums; text-align:right }
   .countdown{ position:absolute; inset:0; display:none; place-items:center; background:rgba(0,0,0,0.35); font-size:72px; font-weight:700; }
   .countdown.show{ display:grid; }
-  .result{ padding:10px; border-top:1px solid var(--border); background:#0e1116; display:flex; flex-direction:column; gap:8px }
-  video{ width:100%; border-radius:10px; }
-  .saveBtn{ background:#f59e0b; border-color:#d97706; }
+  .result{ padding:0; border-top:1px solid var(--border); background:#0e1116; display:none; flex-direction:column; gap:0 }
+  video{ width:100%; border-radius:0 }
+  .saveBar{ display:flex; gap:10px; padding:10px; background:#0b0f15; border-top:1px solid var(--border); position:sticky; bottom:0; z-index:4; }
+  .saveBtn{ background:#f59e0b; border-color:#d97706; font-weight:600 }
+  .reRecord{ background:#334155; border-color:#1f2937 }
 </style>
 </head>
 <body>
@@ -61,7 +63,7 @@
   <button id="fitBtn">Fit</button>
   <button id="toggleControls">Toggle Controls</button>
   <button id="startBtn" class="startBtn" disabled>▶ Record 15s</button>
-  <span class="pill" id="status">Load an image to auto-start…</span>
+  <span class="pill" id="status">Load an image to start…</span>
 </header>
 <main>
   <div class="panel">
@@ -72,11 +74,11 @@
         <div id="countdown" class="countdown">3</div>
       </div>
     </div>
-    <div class="result" id="result" style="display:none;">
-      <strong>Recording finished</strong>
+    <div class="result" id="result">
       <video id="vid" controls playsinline></video>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="saveBar">
         <button id="saveBtn" class="saveBtn">Save video</button>
+        <button id="againBtn" class="reRecord">Record again</button>
         <a id="downloadLink" href="#" download style="display:none">Download</a>
       </div>
     </div>
@@ -86,14 +88,12 @@
     <div class="controls" id="controls"></div>
   </div>
 </main>
-<!-- Dedicated recording canvas -->
 <canvas id="recCanvas" width="1080" height="1920"></canvas>
 
 <script>
 const statusEl = document.getElementById('status');
 function setStatus(t){ statusEl.textContent = t; }
 
-// Defaults: scale 100%, hole size 0
 let params = {
   loopLen:15, spins:1.0, waveCycles:2.0, tilesR:4.0, flowCycles:1.2, tilesT:1.0,
   segments:12, zoom:0.9, spiral:0.06, waveAmp:0.1,
@@ -172,7 +172,7 @@ void main(){
 function makeRenderer(canvas){
   const gl = canvas.getContext('webgl2', {premultipliedAlpha:false,preserveDrawingBuffer:false});
   if(!gl){ alert('WebGL2 is required'); throw new Error('WebGL2 not available'); }
-  function sh(t,s){ const o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o); if(!gl.getShaderParameter(o,gl.COMPILER_STATUS)){}; if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+  function sh(t,s){ const o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o); if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
   const prog=gl.createProgram(); gl.attachShader(prog,sh(gl.VERTEX_SHADER,VERT)); gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FRAG)); gl.linkProgram(prog);
   if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
   const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
@@ -201,6 +201,7 @@ const recCanvas = document.getElementById('recCanvas');
 const resultEl = document.getElementById('result');
 const vidEl = document.getElementById('vid');
 const saveBtn = document.getElementById('saveBtn');
+const againBtn = document.getElementById('againBtn');
 let preview, recRenderer, loaded=false, imW=0, imH=0, imgSrc=null, startTime=0, lastBlob=null;
 
 let scale = 1.00;
@@ -240,7 +241,7 @@ function resizePreview(){
 window.addEventListener('resize', resizePreview);
 document.getElementById('previewAR').addEventListener('change', resizePreview);
 
-// Image loading (auto-start record after load)
+// Image loading
 document.getElementById('file').addEventListener('change', e=>{
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
@@ -305,6 +306,7 @@ function startRecording(){
 }
 
 function doRecord(){
+  resultEl.style.display = 'none'; lastBlob = null;
   recCanvas.width = 1080; recCanvas.height = 1920;
   try{ recRenderer = makeRenderer(recCanvas); } catch(err){ setStatus('WebGL2 error: '+err.message); return; }
   const img = new Image(); img.onload=()=> recRenderer.upload(img); img.src = imgSrc;
@@ -318,21 +320,17 @@ function doRecord(){
     { mimeType:'video/webm;codecs=vp8', videoBitsPerSecond: 14000000 }
   ];
   let opts = null;
-  for(const o of optsList){
-    if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(o.mimeType)){ opts = o; break; }
-  }
+  for(const o of optsList){ if(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(o.mimeType)){ opts = o; break; } }
   if(!opts) opts = { mimeType:'video/webm', videoBitsPerSecond: 14000000 };
 
   const rec = new MediaRecorder(stream, opts);
   rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
   rec.onstop = () => {
-    const type = rec.mimeType || opts.mimeType;
-    lastBlob = new Blob(chunks, { type });
+    lastBlob = new Blob(chunks, { type: (rec.mimeType || opts.mimeType) });
     const url = URL.createObjectURL(lastBlob);
-    vidEl.src = url;
-    vidEl.load(); vidEl.play();
-    resultEl.style.display = 'block';
-    setStatus('Recording complete — preview ready. Tap “Save video” to download.');
+    vidEl.src = url; vidEl.load(); vidEl.play();
+    resultEl.style.display = 'flex';
+    setStatus('Recording complete — preview ready. Tap “Save video”.');
   };
   rec.start();
   setStatus(`Recording… (${opts.mimeType})`);
@@ -348,19 +346,18 @@ function doRecord(){
   tick();
 }
 
-// Manual start button (re-record)
+// Buttons
 document.getElementById('startBtn').addEventListener('click', startRecording);
-
-// Save video WHEN user taps
-document.getElementById('saveBtn').addEventListener('click', ()=>{
+saveBtn.addEventListener('click', ()=>{
   if(!lastBlob) return;
   const url = URL.createObjectURL(lastBlob);
   const a = document.getElementById('downloadLink');
   const ext = (lastBlob.type.includes('mp4') ? 'mp4' : 'webm');
   a.href = url; a.download = `kaleido-reel-1080x1920-15s.${ext}`;
   a.style.display = 'inline';
-  a.click(); // user initiated
+  a.click();
 });
+againBtn.addEventListener('click', startRecording);
 </script>
 </body>
 </html>
