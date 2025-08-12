@@ -1,0 +1,57 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaleido Warp iPhone 15s</title>
+<style>
+  body { margin: 0; background: black; color: white; font-family: sans-serif; text-align: center; }
+  #preview { width: 100%; height: 80vh; background: #000; display: block; }
+  button { padding: 10px 20px; margin: 10px; font-size: 18px; }
+</style>
+</head>
+<body>
+<h1>Kaleido Warp — iPhone 15s Recorder</h1>
+<input type="file" id="fileInput" accept="image/*"><br>
+<canvas id="preview"></canvas><br>
+<button id="startBtn">Start 15s Recording</button>
+<script>
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+canvas.width = 1080;
+canvas.height = 1920;
+ctx.fillStyle = 'black';
+ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle = 'white';
+ctx.font = '40px sans-serif';
+ctx.fillText('Warp effect preview here', 50, 100);
+
+let recording = false;
+let stream = canvas.captureStream(30);
+let mediaRecorder;
+let chunks = [];
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (recording) return;
+  recording = true;
+  chunks = [];
+  mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp8' });
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'warp-15s.webm';
+    a.click();
+  };
+  mediaRecorder.start();
+  setTimeout(() => {
+    mediaRecorder.stop();
+    recording = false;
+  }, 15000);
+});
+</script>
+</body>
+</html>
